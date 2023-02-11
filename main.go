@@ -48,6 +48,11 @@ func fatal(err error) {
 	}
 }
 
+func fatalr[T any](v T, err error) T {
+	fatal(err)
+	return v
+}
+
 func closeDB(db **bbolt.DB) {
 	if *db != nil {
 		(*db).Close()
@@ -65,14 +70,11 @@ func btoi(b []byte) uint64 {
 }
 
 func getDBPath() string {
-	dbPath, err := xdg.DataFile("changedir/history.db")
-	fatal(err)
-	return dbPath
+	return fatalr(xdg.DataFile("changedir/history.db"))
 }
 
 func loadDB() *bbolt.DB {
-	db, err := bbolt.Open(getDBPath(), 0600, nil)
-	fatal(err)
+	db := fatalr(bbolt.Open(getDBPath(), 0600, nil))
 	defer closeDB(&db)
 
 	fatal(db.Update(func(tx *bbolt.Tx) error {
@@ -119,14 +121,11 @@ func commandList(db *bbolt.DB, args []string) {
 	})
 	w := bufio.NewWriter(os.Stdout)
 	for _, e := range out {
-		var err error
 		if *timestamps {
-			_, err = w.Write(e.AccessTime)
-			fatal(err)
+			fatalr(w.Write(e.AccessTime))
 			fatal(w.WriteByte('\t'))
 		}
-		_, err = w.Write(e.Path)
-		fatal(err)
+		fatalr(w.Write(e.Path))
 		fatal(w.WriteByte('\n'))
 	}
 	fatal(w.Flush())
@@ -184,6 +183,28 @@ func commandRemove(db *bbolt.DB, args []string) {
 	}))
 }
 
+func commandInstall(db *bbolt.DB, args []string) {
+	cmd := flag.NewFlagSet("changedir install", flag.ExitOnError)
+	cmd.Usage = func() {
+		fmt.Fprintf(cmd.Output(), "Usage: changedir install\n")
+		fmt.Fprintf(cmd.Output(), ww("\nInstall shell integration. This command is interactive. Before writing anything to any file it will print the details and ask for confirmation. Don't hesitate to run it and see if what it does suits your needs.\n"))
+		cmd.PrintDefaults()
+	}
+	cmd.Parse(args)
+
+	fmt.Printf("Installation is available for the following shells:\n")
+	fmt.Printf("1) fish\n")
+	n := fatalr(askInt("Which shell do you want to install files for? ", 0))
+	if n != 1 {
+		fatal(fmt.Errorf("Please, pick 1"))
+	}
+
+	switch n {
+	case 1:
+		installFish()
+	}
+}
+
 func commandPrune(db *bbolt.DB, args []string) {
 	cmd := flag.NewFlagSet("changedir prune", flag.ExitOnError)
 	dry := cmd.Bool("dry", false, "only print the results without actually removing anything")
@@ -206,14 +227,11 @@ func commandPrune(db *bbolt.DB, args []string) {
 			if isNotExist || notDir {
 				toRemove = append(toRemove, k)
 				if isNotExist {
-					_, err := w.WriteString("[MISSING] ")
-					fatal(err)
+					fatalr(w.WriteString("[MISSING] "))
 				} else {
-					_, err := w.WriteString("[NOTADIR] ")
-					fatal(err)
+					fatalr(w.WriteString("[NOTADIR] "))
 				}
-				_, err := w.Write(k)
-				fatal(err)
+				fatalr(w.Write(k))
 				fatal(w.WriteByte('\n'))
 			}
 			return nil
@@ -270,10 +288,8 @@ func commandIgnoreList(db *bbolt.DB, args []string) {
 	regexps := getIgnoreList(db)
 	w := bufio.NewWriter(os.Stdout)
 	for _, r := range regexps {
-		var err error
 		fatal(w.WriteByte('\''))
-		_, err = w.Write(r.RegExp)
-		fatal(err)
+		fatalr(w.Write(r.RegExp))
 		fatal(w.WriteByte('\''))
 		fatal(w.WriteByte('\n'))
 	}
@@ -353,8 +369,7 @@ func commandIgnoreApply(db *bbolt.DB, args []string) {
 			}
 			if matches {
 				toRemove = append(toRemove, k)
-				_, err := w.Write(k)
-				fatal(err)
+				fatalr(w.Write(k))
 				fatal(w.WriteByte('\n'))
 			}
 			return nil
@@ -399,6 +414,7 @@ func main() {
 		fmt.Fprintf(o, "  ignore put       put a regexp to ignore list\n")
 		fmt.Fprintf(o, "  ignore remove    remove a regexp from ignore list\n")
 		fmt.Fprintf(o, "  ignore apply     apply ignore list to existing entries\n")
+		fmt.Fprintf(o, "  install          install shell integration (interactive)\n")
 		fmt.Fprintf(o, "\nDatabase location:\n")
 		fmt.Fprintf(o, "  %s\n", getDBPath())
 		cmd.PrintDefaults()
@@ -422,6 +438,8 @@ func main() {
 		commandRemove(db, args)
 	case "prune":
 		commandPrune(db, args)
+	case "install":
+		commandInstall(db, args)
 	case "ignore":
 		subCommand, args := getSubCommand(args)
 		switch subCommand {
