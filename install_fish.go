@@ -18,7 +18,7 @@ const fishCDInteractive = `
 function cd-interactive --description "go to directory based on history (interactive)"
     # clear the line and move cursor to the beginning of the line (less flickering in some terminals)
     echo -ne "\033[2K\r"
-    set -l destdir (changedir list | fzf --reverse --no-sort --no-info)
+    set -l destdir (changedir list | fzf --scheme=path --reverse --no-sort --no-info)
     if test $status -eq 0
         cd $destdir
     end
